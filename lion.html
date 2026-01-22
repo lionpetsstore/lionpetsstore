@@ -146,7 +146,6 @@
             return new Promise((resolve) => setTimeout(() => resolve({ status: 'success' }), 1500));
         };
 
-        // --- 修正後的 Icon 元件 (防止 lucide 未載入導致報錯) ---
         const Icon = ({ name, size = 20, className = "" }) => {
             const iconRef = useRef(null);
             useEffect(() => {
@@ -163,7 +162,6 @@
             return <span ref={iconRef} style={{ width: size, height: size, display: 'inline-flex' }} className={className} />;
         };
 
-        // --- 跑馬燈元件 ---
         const Marquee = () => {
             const images = [
                 'line_oa_chat_260121_230912_group_0.jpg', 'line_oa_chat_260121_230912_group_1.jpg',
@@ -202,7 +200,6 @@
             </div>
         );
 
-        // --- Terms Modal ---
         const TermsModal = ({ isOpen, onClose, title, children, onAgree }) => {
             const contentRef = useRef(null);
             const [canAgree, setCanAgree] = useState(false);
@@ -228,7 +225,7 @@
 
             if (!isOpen) return null;
 
-return (
+            return (
                 <div className="fixed inset-0 z-[150] bg-lion-navy/40 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl flex flex-col max-h-[85vh] animate-slide-up">
                         <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center shrink-0">
@@ -256,23 +253,21 @@ return (
             );
         };
 
-        // --- Main App ---
         const App = () => {
             const [view, setView] = useState('home');
             const [toast, setToast] = useState(null);
             
-// 完整資料狀態
             const [formData, setFormData] = useState({
                 lineAdded: false, email: '', owner_name: '', is_owner: '是', phone: '', owner_id: '', address: '',
                 emergency_name: '', emergency_phone: '',
                 preferred_clinic_name: '', preferred_clinic_phone: '',
-                pet_name: '', breed: '', weight: '', age: '',
+                pet_name: '', breed: '', weight: '', age_type: 'year', age_value: '',
                 pet_type: 'dog', sex: '', fix: '', chip_status: '', chip_id: '',
                 health_date: '', deworming_monthly: '',
                 physical_check: [], physical_other: '', 
                 social_traits: [], personality_other: '',
                 medical_history: '無', medical_tags: [], medical_other: '',
-                vet_name: '', vet_phone: '', // 新增飼主指定醫院欄位
+                vet_name: '', vet_phone: '',
                 service_tags: [], room_type: '', room_price: '', checkInDate: '', checkOutDate: '',
                 is_barking: '', has_boarding_exp: '', is_food_aggressive: '', use_peepad: '',
                 vaccine_status: '', deworming_status: '', cage_training: '', temperament: '',
@@ -282,7 +277,7 @@ return (
                 legal_agree: false, service_type: ''
             });
             
-const roomRates = {
+            const roomRates = {
                 cat: [
                     { name: '標準房', price: 600, desc: '舒適獨立空間' },
                     { name: '豪華房', price: 800, desc: '跳台玩具豐富' },
@@ -308,18 +303,45 @@ const roomRates = {
             const padInstance = useRef(null);
             const [lineConfirmed, setLineConfirmed] = useState(false);
 
-const [activeModal, setActiveModal] = useState(null);
-            const [termsRead, setTermsRead] = useState({ beauty: false, boarding: false });
+            const [activeModal, setActiveModal] = useState(null);
+            const [termsRead, setTermsRead] = useState({ beauty: false, boarding: false, highRiskBeauty: false, highRiskBoarding: false });
+
+            // --- Risk Assessment Logic ---
+            const checkHighRisk = (data) => {
+                // 1. 病史為「有」 (變數修正：medical_history)
+                if (data.medical_history === '有') return true;
+                
+                // 2. 年齡判斷
+                const num = parseFloat(data.age_value);
+                if (isNaN(num)) return false; 
+
+                // 模式 A: 未滿1歲 (單位：月) -> 3 個月以下(含)為高風險
+                if (data.age_type === 'month') {
+                    if (num <= 3) return true;
+                }
+                // 模式 B: 1歲以上 (單位：歲) -> 8 歲以上為高風險
+                else if (data.age_type === 'year') {
+                    if (num >= 8) return true;
+                }
+                
+                return false;
+            };
+
+            const isHighRisk = useMemo(() => checkHighRisk(formData), [formData]);
 
             const allTermsCompleted = useMemo(() => {
                 if (!termsRead.beauty) return false;
                 if (view === 'boarding' && !termsRead.boarding) return false;
+                
+                if (isHighRisk) {
+                    if (!termsRead.highRiskBeauty) return false;
+                    if (view === 'boarding' && !termsRead.highRiskBoarding) return false;
+                }
                 return true;
-            }, [termsRead, view]);
+            }, [termsRead, view, isHighRisk]);
 
             const handleTermAgree = (type) => {
                 setTermsRead(prev => ({ ...prev, [type]: true }));
-                // 同意條款時自動將 legal_agree 設為 true (因為移除勾選框了)
                 setFormData(prev => ({ ...prev, legal_agree: true })); 
             };
 
@@ -357,7 +379,7 @@ const [activeModal, setActiveModal] = useState(null);
                 });
             };
 
-const validate = () => {
+            const validate = () => {
                 const newErrors = {};
                 const commonRequired = ['email', 'owner_name', 'phone', 'address', 'emergency_name', 'emergency_phone', 'pet_name', 'breed', 'weight', 'sex', 'fix', 'chip_status'];
                 commonRequired.forEach(f => { if (!formData[f]) newErrors[f] = true; });
@@ -372,13 +394,9 @@ const validate = () => {
 
                 if (formData.chip_status === '有晶片' && !formData.chip_id) newErrors.chip_id = true;
 
-                // 修正重點：先設定錯誤狀態，讓紅框顯示出來
                 setErrors(newErrors);
-
-                // 如果有紅框錯誤，直接回傳 false (這樣 handleSubmit 會顯示「請檢查紅框欄位」)
                 if (Object.keys(newErrors).length > 0) return false;
 
-                // 接著才檢查其他條件
                 if (!lineConfirmed) { showToastMsg('請先完成 LINE 確認'); return false; }
                 if (!allTermsCompleted) { showToastMsg('請先完成所有契約條款閱讀'); return false; }
                 if (!realtimeSig) { showToastMsg('請完成數位簽名'); return false; }
@@ -453,7 +471,6 @@ const validate = () => {
                 }
             };
 
-            // --- Home View (完全保留) ---
             if (view === 'home') {
                 return (
                     <div className="min-h-screen relative flex flex-col font-sans">
@@ -503,7 +520,6 @@ const validate = () => {
                 );
             }
 
-            // --- Form Views ---
             return (
                 <div className="min-h-screen pb-40">
                     {toast && <Toast message={toast.message} type={toast.type} />}
@@ -597,10 +613,29 @@ const validate = () => {
                                 <InputWithError label="體重 (kg) *" name="weight" type="number" value={formData.weight} onChange={e=>handleChange('weight', e.target.value)} error={errors.weight} />
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-slate-500">年齡 *</label>
-                                    <input type="text" className="w-full cute-input rounded-xl px-4 py-3" placeholder="例: 3歲 或 5個月" value={formData.age} onChange={e=>handleChange('age', e.target.value)} />
+                                    <div className="space-y-3">
+                                        <div className="flex gap-2">
+                                            <button onClick={() => { handleChange('age_type', 'year'); handleChange('age_value', ''); }} 
+                                                className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-all ${formData.age_type === 'year' ? 'bg-lion-navy text-white border-lion-navy shadow-md' : 'bg-white text-slate-500 border-slate-200'}`}>
+                                                1歲以上
+                                            </button>
+                                            <button onClick={() => { handleChange('age_type', 'month'); handleChange('age_value', ''); }} 
+                                                className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-all ${formData.age_type === 'month' ? 'bg-lion-navy text-white border-lion-navy shadow-md' : 'bg-white text-slate-500 border-slate-200'}`}>
+                                                未滿1歲 (1~11個月)
+                                            </button>
+                                        </div>
+                                        <div className="relative animate-slide-down">
+                                            <input type="number" className="w-full cute-input rounded-xl px-4 py-3 font-bold text-lion-navy" 
+                                                placeholder={formData.age_type === 'year' ? "請輸入幾歲 (例如: 8)" : "請輸入幾個月 (例如: 2)"} 
+                                                value={formData.age_value} onChange={e=>handleChange('age_value', e.target.value)} />
+                                            <span className="absolute right-4 top-3 text-lion-navy/50 font-bold text-sm pointer-events-none">
+                                                {formData.age_type === 'year' ? '歲' : '個月'}
+                                            </span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-<div className="grid grid-cols-2 gap-6">
+                            <div className="grid grid-cols-2 gap-6">
                                 <div className="space-y-2"><label className="text-xs font-bold text-slate-500">性別 *</label><div className="flex gap-2">{['公','母'].map(v=>(<button key={v} onClick={()=>handleChange('sex',v)} className={`flex-1 py-3 rounded-xl border text-sm font-bold transition-all ${formData.sex===v?'bg-lion-navy text-white border-lion-navy': (errors.sex ? 'bg-red-50 border-red-500 text-red-500' : 'bg-white/50 text-slate-500 border-slate-300')}`}>{v}</button>))}</div></div>
                                 <div className="space-y-2"><label className="text-xs font-bold text-slate-500">結紮 *</label><div className="flex gap-2">{['是','否'].map(v=>(<button key={v} onClick={()=>handleChange('fix',v)} className={`flex-1 py-3 rounded-xl border text-sm font-bold transition-all ${formData.fix===v?'bg-lion-navy text-white border-lion-navy': (errors.fix ? 'bg-red-50 border-red-500 text-red-500' : 'bg-white/50 text-slate-500 border-slate-300')}`}>{v}</button>))}</div></div>
                             </div>
@@ -643,7 +678,7 @@ const validate = () => {
                                 </div>
                             )}
 
-<div className="space-y-2">
+                            <div className="space-y-2">
                                 <label className="text-xs font-bold text-lion-navy/70 ml-1">晶片狀態</label>
                                 <div className="flex flex-wrap gap-2">
                                     {['有晶片', '有晶片(號碼不詳)', '無晶片'].map(v => (
@@ -666,7 +701,7 @@ const validate = () => {
                             </div>
                             
                             <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-500">飼主指定醫療院所</label>
+                                <label className="text-xs font-bold text-slate-500">飼主指定醫療院所(若未填寫則送往乙方特約醫院)</label>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <InputWithError label="醫院名稱" name="preferred_clinic_name" value={formData.preferred_clinic_name || ''} onChange={e=>handleChange('preferred_clinic_name', e.target.value)} placeholder="例：台大動物醫院" />
                                     <InputWithError label="聯絡電話" name="preferred_clinic_phone" value={formData.preferred_clinic_phone || ''} onChange={e=>handleChange('preferred_clinic_phone', e.target.value)} placeholder="例：03-123-4567" />
@@ -674,7 +709,6 @@ const validate = () => {
                             </div>
                         </section>
 
-{/* 消費項目 */}
                         <section className="glass-premium p-6 md:p-8 space-y-6">
                             <h3 className="font-bold text-lion-navy border-b border-slate-200 pb-4 flex items-center gap-3 text-lg"><div className="w-8 h-8 rounded-lg bg-lion-navy/10 flex items-center justify-center text-lion-navy"><Icon name="shopping-bag" size={18}/></div> 消費項目 (可複選)</h3>
                             
@@ -688,7 +722,7 @@ const validate = () => {
                                     <div className="space-y-3">
                                         <label className="text-xs font-bold text-slate-500 ml-1">選擇房型 ({formData.pet_type === 'dog' ? '狗狗' : '貓咪'}) *</label>
                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-{roomRates[formData.pet_type].map((room) => (
+                                            {roomRates[formData.pet_type].map((room) => (
                                                 <div 
                                                     key={room.name}
                                                     onClick={() => { handleChange('room_type', room.name); handleChange('room_price', room.price); }}
@@ -746,7 +780,6 @@ const validate = () => {
                             </div>
                         </section>
 
-                        {/* 付款資訊 */}
                         <section className="glass-premium p-6 md:p-8 space-y-6">
                             <h3 className="font-bold text-lion-navy border-b border-slate-200 pb-4 flex items-center gap-3 text-lg"><div className="w-8 h-8 rounded-lg bg-lion-navy/10 flex items-center justify-center text-lion-navy"><Icon name="dollar-sign" size={18}/></div> 付款與金額確認</h3>
                             <InputWithError label="本次消費總金額" type="number" name="total_amount" value={formData.total_amount} onChange={e=>handleChange('total_amount', e.target.value)} placeholder="由店家告知金額後填寫" />
@@ -759,15 +792,14 @@ const validate = () => {
                             )}
                         </section>
 
-{/* 店家資訊 */}
                         <section className="glass-premium p-6 md:p-8 space-y-5 text-sm text-slate-600">
                             <h3 className="font-bold text-lion-navy border-b border-slate-200 pb-4 text-lg">乙方（店家資訊）</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 p-5 rounded-2xl border border-slate-100">
                                 <p className="flex items-center gap-2"><Icon name="briefcase" size={16} className="text-lion-gold"/><span className="font-bold text-lion-navy">名稱：</span>佳晟寵物美容旅館</p>
                                 <p className="flex items-center gap-2"><Icon name="user" size={16} className="text-lion-gold"/><span className="font-bold text-lion-navy">負責人：</span>顏睿諺</p>
                                 <p className="flex items-center gap-2"><Icon name="phone" size={16} className="text-lion-gold"/><span className="font-bold text-lion-navy">電話：</span>03-360-8693</p>
-                                <p className="flex items-center gap-2"><Icon name="file-text" size={16} className="text-lion-gold"/><span className="font-bold text-lion-navy">特寵：</span>C1130686號</p>
                                 <p className="md:col-span-2 flex items-start gap-2"><Icon name="map-pin" size={16} className="text-lion-gold mt-0.5 shrink-0"/><span className="font-bold text-lion-navy">地址：</span>桃園市桃園區民族路199-2號</p>
+                                <p className="flex items-center gap-2"><Icon name="file-text" size={16} className="text-lion-gold"/><span className="font-bold text-lion-navy">特寵業字第C1130686號</span></p>
                             </div>
                             <div className="bg-red-50 p-5 rounded-xl text-slate-600 text-xs border border-red-100 space-y-2">
                                 <h4 className="font-bold text-red-600 text-sm flex items-center gap-2"><Icon name="ambulance" size={18}/> 乙方指定醫療院所</h4>
@@ -775,25 +807,34 @@ const validate = () => {
                                 <p><span className="font-bold">電話：</span>03-333-6775</p>
                                 <p><span className="font-bold">地址：</span>桃園市桃園區中福街60號</p>
                             </div>
+                            <div className="mt-3 pt-3 border-t border-red-100 text-justify">
+    <p className="text-[11px] leading-relaxed">
+        若經判定情況危急或距離之限制不宜前往甲方指定之醫院，將就近由乙方指定之醫院進行救治，就醫前須先通知甲方。
+    </p>
+</div>
                         </section>
 
-{/* 法律與簽名 */}
                         <section className="glass-premium p-6 md:p-8 space-y-5">
                             <h3 className="font-bold text-lion-navy border-b border-slate-200 pb-4 text-lg">法律條款與簽署</h3>
                             
-                            {/* 美容條款 (永遠顯示) - 修正：強制使用 lion-navy 深藍色樣式 */}
-                            <button onClick={() => setActiveModal('beauty')} className={`w-full flex items-center justify-between p-5 rounded-2xl border-2 transition-all group shadow-sm bg-white ${termsRead.beauty ? 'border-lion-line/50' : 'border-lion-navy hover:bg-lion-navy/5'}`}>
-                                <div className="flex items-center gap-4">
-                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${termsRead.beauty ? 'bg-lion-line text-white' : 'bg-lion-navy/10 text-lion-navy'}`}><Icon name={termsRead.beauty ? "check" : "file-text"} size={24}/></div>
-                                    <div className="text-left">
-                                        <div className="font-bold text-base text-lion-navy">美容服務契約條款</div>
-                                        <div className="text-xs text-slate-400 mt-0.5">{termsRead.beauty ? '已完成閱讀與簽署' : '請點擊詳閱內容'}</div>
-                                    </div>
-                                </div>
-                                <div className={`px-3 py-1.5 rounded-lg text-xs font-bold ${termsRead.beauty ? 'bg-lion-line/10 text-lion-line' : 'bg-lion-navy text-white'}`}>{termsRead.beauty ? '已同意' : '待閱讀'}</div>
-                            </button>
+<button 
+    onClick={() => setActiveModal('beauty')} 
+    className={`w-full flex items-center justify-between p-5 rounded-2xl border-2 transition-all group shadow-sm bg-white relative z-10 ${termsRead.beauty ? 'border-lion-line/50' : 'border-lion-navy hover:bg-lion-navy/5'}`}
+>
+    <div className="flex items-center gap-4">
+        <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${termsRead.beauty ? 'bg-lion-line text-white' : 'bg-lion-navy/10 text-lion-navy'}`}>
+            <Icon name={termsRead.beauty ? "check" : "file-text"} size={24}/>
+        </div>
+        <div className="text-left">
+            <div className="font-bold text-base text-lion-navy">美容服務契約條款</div>
+            <div className="text-xs text-slate-400 mt-0.5">{termsRead.beauty ? '已完成閱讀與簽署' : '請點擊詳閱內容'}</div>
+        </div>
+    </div>
+    <div className={`px-3 py-1.5 rounded-lg text-xs font-bold ${termsRead.beauty ? 'bg-lion-line/10 text-lion-line' : 'bg-lion-navy text-white'}`}>
+        {termsRead.beauty ? '已同意' : '待閱讀'}
+    </div>
+</button>
 
-                            {/* 住宿條款 (僅住宿顯示) - 樣式與美容完全一致 */}
                             {view === 'boarding' && (
                                 <button onClick={() => setActiveModal('boarding')} className={`w-full flex items-center justify-between p-5 rounded-2xl border-2 transition-all group shadow-sm bg-white animate-slide-down ${termsRead.boarding ? 'border-lion-line/50' : 'border-lion-navy hover:bg-lion-navy/5'}`}>
                                     <div className="flex items-center gap-4">
@@ -807,7 +848,36 @@ const validate = () => {
                                 </button>
                             )}
 
-                            {/* 簽名區 */}                            
+                            {isHighRisk && (
+                                <button onClick={() => setActiveModal('highRiskBeauty')} className={`w-full flex items-center justify-between p-5 rounded-2xl border-2 transition-all group shadow-sm bg-white animate-slide-down ${termsRead.highRiskBeauty ? 'border-lion-line/50' : 'border-red-400 hover:bg-red-50'}`}>
+                                    <div className="flex items-center gap-4">
+                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${termsRead.highRiskBeauty ? 'bg-lion-line text-white' : 'bg-red-100 text-red-500 animate-pulse'}`}>
+                                            <Icon name={termsRead.highRiskBeauty ? "check" : "alert-triangle"} size={24}/>
+                                        </div>
+                                        <div className="text-left">
+                                            <div className="font-bold text-base text-lion-navy">高風險美容服務同意書</div>
+                                            <div className="text-xs font-bold text-red-500 mt-0.5">{termsRead.highRiskBeauty ? '已完成簽署' : '請點擊詳閱並同意'}</div>
+                                        </div>
+                                    </div>
+                                    <div className={`px-3 py-1.5 rounded-lg text-xs font-bold ${termsRead.highRiskBeauty ? 'bg-lion-line/10 text-lion-line' : 'bg-red-500 text-white'}`}>{termsRead.highRiskBeauty ? '已同意' : '待簽署'}</div>
+                                </button>
+                            )}
+
+                            {isHighRisk && view === 'boarding' && (
+                                <button onClick={() => setActiveModal('highRiskBoarding')} className={`w-full flex items-center justify-between p-5 rounded-2xl border-2 transition-all group shadow-sm bg-white animate-slide-down ${termsRead.highRiskBoarding ? 'border-lion-line/50' : 'border-red-400 hover:bg-red-50'}`}>
+                                    <div className="flex items-center gap-4">
+                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${termsRead.highRiskBoarding ? 'bg-lion-line text-white' : 'bg-red-100 text-red-500 animate-pulse'}`}>
+                                            <Icon name={termsRead.highRiskBoarding ? "check" : "alert-triangle"} size={24}/>
+                                        </div>
+                                        <div className="text-left">
+                                            <div className="font-bold text-base text-lion-navy">高風險住宿服務同意書</div>
+                                            <div className="text-xs font-bold text-red-500 mt-0.5">{termsRead.highRiskBoarding ? '已完成簽署' : '請點擊詳閱並同意'}</div>
+                                        </div>
+                                    </div>
+                                    <div className={`px-3 py-1.5 rounded-lg text-xs font-bold ${termsRead.highRiskBoarding ? 'bg-lion-line/10 text-lion-line' : 'bg-red-500 text-white'}`}>{termsRead.highRiskBoarding ? '已同意' : '待簽署'}</div>
+                                </button>
+                            )}
+
                             <div className="space-y-4 pt-6 border-t border-slate-200" id="signature">
                                 <div className="flex items-center justify-between">
                                     <label className="text-sm font-bold text-lion-navy flex items-center gap-2">
@@ -851,18 +921,17 @@ const validate = () => {
                         </section>
                     </main>
 
-{/* Modals - Beauty Terms */}
                     <TermsModal isOpen={activeModal === 'beauty'} onClose={() => setActiveModal(null)} title="美容服務契約條款" onAgree={() => handleTermAgree('beauty')}>
                         <div className="space-y-4">
                             <p className="font-bold text-lion-navy text-lg border-b pb-2 mb-4">美容服務 簽署聲明與法律約定</p>
-                            <ol className="list-decimal pl-5 space-y-2 text-justify text-slate-600 text-sm">
-                                <li><strong>第一條(契約目的):</strong> 本服務為犬貓美容，不涉及醫療行為;乙方須維持環境安全、通風及清潔。</li>
-                                <li><strong>第五條(健康告知):</strong> 甲方應誠實告知寵物病史與是否具有攻擊性。若因隱瞞導致意外，乙方不負責損害賠償責任；因隱瞞導致乙方人員傷亡、財損等相關損失，乙方將全額向甲方(飼主寵物所有權人)求償。</li>
-                                <li><strong>第九條(退費規定):</strong> 包月服務終止時，預收總額扣除(已使用次數X單次原價)後退費，乙方不額外收取解約手續費。</li>
-                                <li><strong>第十二條(逾時接回):</strong> 飼主應於洗澡美容當日將寵物領回，若於約定時間內未領回，依照價目表公告之安親費額外收費，打烊時仍未接回依照價目表公告之住宿房型收費，房價則依照當日住宿狀況安排，滾動式調整。如經通知三日內未領回，將依照動保法第29條第一款通知主管機關，其餘衍生之費用將由飼主全額支付。</li>
-                                <li><strong>第十五條(履約保障):</strong> 預收費用累積金額新台幣一萬元以下，依法免提供履約保障。</li>
+                            <ol className="list-decimal pl-5 space-y-3 marker:text-lion-gold marker:font-bold pb-4 text-justify text-slate-600 text-sm">
+                                <li><strong>第一條(契約目的)：</strong>本服務為犬貓美容，<span className="text-red-500 font-bold underline">不涉及醫療行為</span>。</li>
+                                <li><strong>第五條(健康告知)：</strong>甲方應<span className="font-bold underline">誠實告知</span>寵物病史與是否具有攻擊性。若因隱瞞導致意外，<span className="text-red-500 font-bold">乙方不負責損害賠償責任</span>；因隱瞞導致乙方人員傷亡、財損等損失，<span className="text-red-500 font-bold underline">乙方將全額向甲方求償</span>。</li>
+                                <li><strong>第九條(退費規定)：</strong>包月服務終止時，預收總額扣除(<span className="font-bold text-lion-navy">已使用次數 X 單次原價</span>)後退費。</li>
+                                <li><strong>第十二條(逾時接回)：</strong>若於約定時間內未領回，<span className="text-red-500 font-bold">加收安親費</span>；打烊時仍未接回，則<span className="text-red-500 font-bold">視同住宿一晚計費</span>。如經通知三日內未領回，將依照<span className="font-bold underline">動保法第29條</span>移交主管機關。</li>
+                                <li><strong>第十五條(履約保障)：</strong>預收費用累積金額新台幣一萬元以下，依法免提供履約保障。</li>
                                 <li>其餘細節將依照行政院農委會定型化契約範本辦理。</li>
-                                <li>因本契約所產生之訴訟，雙方合意將以桃園地方法院為第一審管轄法院。</li>
+                                <li>因本契約所產生之訴訟，雙方合意將以<span className="font-bold">桃園地方法院</span>為第一審管轄法院。</li>
                             </ol>
                             <div className="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-500 space-y-1">
                                 <p>■ 經甲乙雙方合意約定，由甲方即時閱讀理解本契約內容並簽署。</p>
@@ -871,25 +940,88 @@ const validate = () => {
                         </div>
                     </TermsModal>
 
-                    {/* Modals - Boarding Terms */}
+{/* Modals - High Risk Beauty */}
+                    <TermsModal isOpen={activeModal === 'highRiskBeauty'} onClose={() => setActiveModal(null)} title="高風險美容服務風險告知暨同意聲明" onAgree={() => handleTermAgree('highRiskBeauty')}>
+                        <div className="space-y-6">
+                            <div className="space-y-2">
+                                <h4 className="font-bold text-lion-navy border-b pb-1 text-base">一、飼主誠實告知義務</h4>
+                                <p className="text-justify leading-relaxed">本人（甲方）確認，已就本人所知悉之寵物年齡、過往病史（如心臟病、癲癇、氣喘、關節問題等）、近期手術或治療紀錄、懷孕狀況、過敏反應，以及行為特性（如咬人紀錄、特定部位敏感、抗拒保定等），向 貴店（乙方）為完整且真實之說明。如因甲方未告知、未完全告知或提供不實資訊，致乙方於已盡合理專業注意義務之情形下，仍難以預見或防範風險發生者，其相關責任歸屬，雙方同意依實際情形及相關法律規定認定，且須賠償因隱瞞導致服務犬、貓隻人員受傷的相關醫療費用、精神賠償、無法工作損失之費用。</p>
+                            </div>
+                            <div className="space-y-2">
+                                <h4 className="font-bold text-lion-navy border-b pb-1 text-base">二、高齡與特殊健康狀況之風險告知</h4>
+                                <p className="text-justify leading-relaxed">本人知悉，高齡、幼齡或患有慢性病之寵物對壓力耐受度較低。美容過程中可能因緊張或體能負荷誘發<span className="text-red-600 font-bold underline">休克、舊疾復發或不可預期之意外</span>。本人同意：若不利結果源於寵物自身狀況且乙方無故意過失，<span className="text-red-600 font-bold">乙方不負損害賠償責任</span>。</p>
+                            </div>
+                            <div className="space-y-2">
+                                <h4 className="font-bold text-lion-navy border-b pb-1 text-base">三、攻擊性與行為安全防護同意</h4>
+                                <p className="text-justify leading-relaxed">如寵物於服務過程中出現高度緊張、攻擊行為、過度躁動或其他影響人員及寵物安全之情形，本人同意並授權乙方，基於安全考量，採取必要之防護與保定措施（包含但不限於牽繩保定、伊莉莎白頸圈、嘴套或雙人協同作業）。若經專業判斷認為繼續服務恐危及寵物或人員安全，乙方得隨時中止服務，並依已完成之服務內容與進度計收費用。若因高度緊張導致犬隻、貓隻在服務過程中，不幸發生任何危及生命的情況，將<span className="text-red-600 font-bold">不在賠償範圍內</span>。</p>
+                            </div>
+                            <div className="space-y-2">
+                                <h4 className="font-bold text-lion-navy border-b pb-1 text-base">四、緊急醫療處置同意</h4>
+                                <p className="text-justify leading-relaxed">服務期間如寵物發生身體不適或緊急狀況，本人同意乙方得優先將寵物送往本人指定或就近之合適動物醫院進行緊急處置，相關醫療及必要交通費用，由本人依法負擔。</p>
+                            </div>
+                            <div className="space-y-2">
+                                <h4 className="font-bold text-lion-navy border-b pb-1 text-base">五、飼主確認</h4>
+                                <p className="text-justify leading-relaxed font-bold text-lion-navy">本人已詳閱並充分理解上述所有內容，確認已就相關風險獲得說明，並於審慎評估後，同意將寵物交付乙方進行美容服務。</p>
+                            </div>
+                        </div>
+                    </TermsModal>
+
+{/* Modals - High Risk Boarding */}
+                    <TermsModal isOpen={activeModal === 'highRiskBoarding'} onClose={() => setActiveModal(null)} title="高風險住宿服務風險告知暨同意聲明" onAgree={() => handleTermAgree('highRiskBoarding')}>
+                        <div className="space-y-6">
+                            {/* 紅色警示區塊：天生病史與隱瞞後果 */}
+                            <div className="p-4 bg-red-50 border border-red-100 rounded-xl text-justify shadow-sm">
+                                <div className="flex items-start gap-2 mb-2">
+                                    <Icon name="alert-triangle" className="text-red-500 shrink-0 mt-1" size={18} />
+                                    <h4 className="font-bold text-red-600">健康狀況與風險承擔</h4>
+                                </div>
+                                <p className="text-sm text-slate-700 leading-relaxed">
+                                    美容洗澡或住宿期間，因基因或本身遺傳問題造成的疾病，或寵物因天生病史、高齡、幼犬貓，因寵物持有人遺漏、隱瞞，或已知風險、仍然堅持美容或住宿，途中若有意外休克或其他等狀況，本店會立即送至附近動物醫院救治。
+                                </p>
+                            </div>
+
+                            {/* 免責聲明 */}
+                            <ul className="space-y-4 list-disc pl-4 marker:text-red-500 text-slate-600 text-justify">
+                                <li className="pl-1">
+                                    寵物若因以上因素導致疾病或死亡等問題發生，都將與 <span className="font-bold text-lion-navy">萊恩寵物沙龍精品旅館</span> 無關，送醫途中或到院治療所產生之相關費用，都需由寵物持有人負擔。
+                                </li>
+                                <li className="pl-1">
+                                    <span className="font-bold text-lion-navy border-b-2 border-red-200">非 24 小時照護聲明：</span>
+                                    <br/>
+                                    寵物持有人已知本店無 24 小時之服務，因此住宿期間若於晚上無人照護時，發生問題導致無即時救治，或因住宿或美容期間寵物本身焦慮、情緒不穩造成自己有傷害發生，都將與 <span className="font-bold text-lion-navy">萊恩寵物沙龍精品旅館</span> 無關。
+                                </li>
+                                <li className="pl-1">
+                                    倘若發生法律上之糾紛，訴訟等相關問題，本切結書會以證據之證明呈上相關法律部門。
+                                </li>
+                            </ul>
+                        </div>
+                    </TermsModal>
+
                     <TermsModal isOpen={activeModal === 'boarding'} onClose={() => setActiveModal(null)} title="住宿/安親契約條款" onAgree={() => handleTermAgree('boarding')}>
                         <div className="space-y-4">
                             <p className="font-bold text-lion-navy text-lg border-b pb-2 mb-4">住宿/安親 簽署聲明與法律約定</p>
                             <p className="text-sm font-bold text-slate-500 mb-2">為確保雙方權利，以下內容請務必詳讀，一旦完成簽署即具有法律效力</p>
-                            <ol className="list-decimal pl-5 space-y-2 text-justify text-slate-600 text-sm">
-                                <li>住宿以晚為單位，入住時間10點-18點前，退房時間18點前，不論安親/美容/洗澡/住宿，超過打烊時間19點，則需住宿旅館一晚</li>
-                                <li>住宿期間，請自備飼料，無自備飼料將依照店內提供之飼料為優先；若因換食造成腸胃不適、軟便或腹瀉等症狀，旅館將不負責賠償</li>
-                                <li>住宿當日須於本館美容部完成洗護後，方可辦理入住；住宿洗澡費用另計，期間若發現有跳蚤、壁蝨等傳染性蟲蚤，將額外收取除蟲蚤費用及環境清潔費</li>
-                                <li>住宿當日飼主需提供身分證件(供本館影印留存)及毛孩預防針手冊備查</li>
-                                <li>飼主應於契約終止時將毛孩帶回，逾期三日聯繫不上飼主，將會依照動物保護法第29條第一款將動物交付動保處保管；逾期日期之住宿費用將由飼主全額支付</li>
-                                <li>住宿、洗澡、美容、安親期間，飼主若隱瞞毛孩曾有攻擊行為，造成本館人員或毛孩傷亡或財物毀損，所有衍生費用本館有權利向飼主全額求償</li>
-                                <li>住宿、洗澡、美容、安親期間，發生寵物吠叫聲持續不止，影響到店內營運及周邊鄰居安寧時，本館將會電話聯繫飼主及緊急連絡人將毛孩帶回</li>
-                                <li>住宿期間，如發生身體不適、持續性下痢、或其他疾病，須立即送醫治療，本館將會電話聯繫飼主及緊急連絡人將毛孩帶回；若飼主或緊急連絡人同意由本館人員先將動物送醫治療，若無指定的醫院或病況危急將送往周邊之安欣動物醫院治療，其治療之相關費用將由飼主全額負擔</li>
-                                <li>住宿、洗澡、美容、安親期間，飼主須如實告知毛孩身體狀況，若隱瞞病況，造成動物發生意外或死亡，經醫院判定本館無任何疏失行為或毛孩本身具有心臟病、癲癇、氣喘、過敏、慢性疾病及各犬種本身好發之疾病等高度危險疾病者，本館將不負責任何賠償相關事宜</li>
-                                <li>住宿、洗澡、美容、安親期間，若發生毛孩走失或人為因素導致受傷或死亡，本館將依法合理賠償，上限30,000元整；毛孩在放風期間因彼此玩耍導致的小傷痕則不在此限內</li>
-                                <li>住宿、洗澡、美容、安親期間，店內物品遭到毛孩破壞，如攝影機$3000/台、房間隔間、相關開放物品等，本館有權利向飼主全額求償</li>
-                                <li>寵物因年老體虛或本身既有疾病死亡，飼主或緊急聯絡人須在接到通知24小時內領回寵物，超過時間未領回則由本館全權處理，所衍生之費用由飼主全額負擔。如對寵物死亡原因有疑慮，飼主或緊急聯絡人須在24小時內會同至本館指定之動物醫院做鑑定，如無法在24小時內會同做鑑定，則飼主不得有異議。(以通聯記錄為準 )</li>
-                                <li>有散步需求之寵物，散步時本館會善盡保護之責，若寵物因掙脫牽繩而導致逃跑、受傷、死亡等，本館將不負責任何賠償相關事宜</li>
+                            <ol className="list-decimal pl-5 space-y-3 marker:text-lion-gold marker:font-bold pb-4 text-justify text-slate-600 text-sm">
+                                <li>
+                                    <strong>住宿計費與進退房：</strong>本館住宿服務以「晚」為計算單位。辦理入住時間為 10:00 至 18:00，退房時間應於 18:00 前。
+                                    <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100 space-y-1 text-[11px]">
+                                        <p className="font-bold text-lion-navy underline underline-offset-2">逾時費用規定：</p>
+                                        <p>• 凡於 18:00 至 19:00 間接回者，將依本館公告加收「安親費用」。</p>
+                                        <p>• 凡超過每日打烊時間 19:00 仍未接回者，不論原服務項目為何（含安親、美容、洗澡或住宿），均視同於本旅館「住宿一晚」，並依現場公告之住宿費率計費。</p>
+                                    </div>
+                                </li>
+                                <li>住宿期間請<span className="font-bold underline">自備飼料</span>。若無自備而由店內提供，導致換食腸胃不適（如軟便、腹瀉），<span className="text-red-500 font-bold">旅館恕不負責賠償</span>。</li>
+                                <li>入住當日需完成本館<span className="font-bold underline">美容部洗護</span>（費用另計）。若發現寄生蟲，將<span className="text-red-500 font-bold">額外收取除蟲及環境清潔費</span>。</li>
+                                <li>請提供<span className="font-bold underline">身分證件影本</span>及毛孩預防針手冊備查。</li>
+                                <li>逾期三日聯繫不上飼主，將依<span className="font-bold underline">動保法</span>交付動保處，衍生費用由<span className="text-red-500 font-bold underline">飼主全額支付</span>。</li>
+                                <li>若隱瞞攻擊行為導致傷亡或財損，<span className="text-red-500 font-bold">本館有權向飼主全額求償</span>。</li>
+                                <li>若寵物持續吠叫影響營運或安寧，本館將聯繫飼主或緊急聯絡人<span className="text-red-500 font-bold underline">先行帶回</span>。</li>
+                                <li>突發疾病須送醫時，相關<span className="text-red-500 font-bold underline">醫療及交通費用由飼主全額負擔</span>。</li>
+                                <li>隱瞞病況或本身具有高風險疾病（心臟病、癲癇等），若發生意外或死亡，經判定本館無疏失，<span className="text-red-500 font-bold">本館不負責賠償責任</span>。</li>
+                                <li>若因人為疏失導致走失、傷亡，本館依法賠償，<span className="text-red-500 font-bold underline">賠償上限為新台幣 30,000 元整</span>（玩耍小傷痕除外）。</li>
+                                <li>若店內物品（攝影機、房間隔間等）遭到破壞，<span className="text-red-500 font-bold">本館有權向飼主全額求償</span>。</li>
+                                <li>寵物若因年老或舊疾死亡，請於 24 小時內領回。若需鑑定死因請於 24 小時內會同辦理，<span className="font-bold underline">逾期不得異議</span>。</li>
+                                <li>散步時若因寵物掙脫牽繩導致逃跑或傷亡，<span className="text-red-500 font-bold">本館不負責相關賠償事宜</span>。</li>
                                 <li>其餘細節將依照行政院農委會定型化契約範本辦理。</li>
                                 <li>本同意書一式兩份，由飼主與本館各執乙份。因本契約所產生之訴訟，雙方合意將以桃園地方法院為第一審管轄法院。</li>
                             </ol>
@@ -899,6 +1031,7 @@ const validate = () => {
                             </div>
                         </div>
                     </TermsModal>
+
                     {showFullSig && (
                         <div className="fullscreen-signature animate-fade-in"><div className="p-4 bg-lion-navy text-white flex justify-between items-center shrink-0 shadow-md safe-area-top"><span className="font-bold text-lg flex items-center gap-3"><Icon name="pen-tool" size={24}/> 請在此簽名</span><button onClick={()=>setShowFullSig(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><Icon name="x" size={28}/></button></div><div className="flex-1 bg-slate-100 relative p-4">
                                 <div className="absolute inset-4 bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
@@ -919,5 +1052,4 @@ const validate = () => {
         root.render(<App />);
     </script>
 </body>
-</html>
-
+</html> 
