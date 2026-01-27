@@ -504,9 +504,18 @@ const HistoryModal = ({ records, onClose, onSelect }) => {
             
             const isBoarding = data.service_type === 'boarding' || (data.room_type && data.room_type !== '');
             
-            // 輔助顯示
+// 輔助顯示 (修正：自動處理 JSON 字串)
             const show = (val) => val || '<span style="color:#ccc;">未填寫</span>';
-            const arr = (val) => Array.isArray(val) && val.length > 0 ? val.join('、') : '無';
+            const arr = (val) => {
+                let target = val;
+                // 如果是字串格式，嘗試解析回陣列
+                if (typeof target === 'string' && target.trim().startsWith('[')) {
+                    try { target = JSON.parse(target); } catch (e) { }
+                }
+                // 如果是陣列，進行合併；若仍是字串則直接顯示
+                if (Array.isArray(target)) return target.length > 0 ? target.join('、') : '無';
+                return (target && target !== '[]') ? target : '無';
+            };
 
             // 樣式定義
             const labelStyle = "font-size: 11px; color: #888; font-weight: bold; display: block; margin-bottom: 3px; letter-spacing: 0.5px;";
@@ -1171,13 +1180,15 @@ const safeParse = (value) => {
   return [];
 };
 
-// --- 新增：帶入舊資料邏輯 ---
+// --- 核心修改：帶入舊資料邏輯 (排除日期與房型) ---
 const handleApplyHistory = (record) => {
     const oldData = record;
     const { 
-        check_in_date, check_out_date, // 從資料庫取出底線格式的日期
+        check_in_date, check_out_date, 
+        room_type, room_price, // 這裡將舊的日期、房型與價格排除，不放入 reusableData
         service_tags, 
         is_owner,
+        physical_check, social_traits, medical_tags,
         ...reusableData 
     } = oldData;
 
@@ -1185,15 +1196,21 @@ const handleApplyHistory = (record) => {
         ...prev,
         ...reusableData,
         phone: formData.phone,
-        // 👇 關鍵修復：將資料庫日期填入前端用的 camelCase 變數
-        checkInDate: check_in_date || '', 
-        checkOutDate: check_out_date || '',
-        // 👇 關鍵修復：確保本人/非本人邏輯正確 (轉為字串 '是')
+        // 使用 safeParse 確保從 DB 回來的 JSON 字串變回陣列
+        physical_check: safeParse(physical_check),
+        social_traits: safeParse(social_traits),
+        medical_tags: safeParse(medical_tags),
+        // --- 強制清空日期與房型資料，讓使用者重新填寫 ---
+        checkInDate: '', 
+        checkOutDate: '',
+        room_type: '',
+        room_price: '',
+        // --------------------------------------------
         is_owner: (is_owner === '是' || is_owner === true) ? '是' : '否',
         service_tags: [], 
-        total_amount: '',
-        payment_method: '',
-        deposit: '',
+        total_amount: '', 
+        payment_method: '', 
+        deposit: '', 
         balance: ''
     }));
     setRealtimeSig(null);
@@ -1264,14 +1281,14 @@ const handleApplyHistory = (record) => {
                         fix: formData.fix,
                         chip_status: formData.chip_status,
                         chip_id: formData.chip_id,
-                        health_date: formData.health_date || null,
+health_date: formData.health_date || null,
                         deworming_monthly: formData.deworming_monthly,
-                        physical_check: JSON.stringify(formData.physical_check),
+                        physical_check: formData.physical_check,
                         physical_other: formData.physical_other,
-                        social_traits: JSON.stringify(formData.social_traits),
+                        social_traits: formData.social_traits,
                         personality_other: formData.personality_other,
                         medical_history: formData.medical_history,
-                        medical_tags: JSON.stringify(formData.medical_tags),
+                        medical_tags: formData.medical_tags,
                         medical_other: formData.medical_other,
                         preferred_clinic_name: formData.preferred_clinic_name,
                         preferred_clinic_phone: formData.preferred_clinic_phone,
